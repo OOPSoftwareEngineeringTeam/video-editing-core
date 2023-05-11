@@ -18,6 +18,7 @@
         public const int HighlightStatusFailed = 2;
 
         public const int GalleryImageType = 0;
+
         public const int GalleryVideoType = 1;
         //public const string VideoResourceCollection = "VideoResource";
     }

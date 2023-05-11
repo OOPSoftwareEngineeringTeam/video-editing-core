@@ -7,6 +7,9 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.FileProviders;
 using video_editing_api.Model;
 using video_editing_api.Model.Collection;
 using video_editing_api.Service;
@@ -34,50 +37,59 @@ namespace video_editing_api
             services.AddHostedService<MergeQueueBackgroundService>();
             services.AddSignalR();
             services.AddHttpClient();
+
             #region AddCors
+
             services.AddCors(options =>
             {
                 options.AddPolicy(name: _myAllowSpecificOrigins,
                     builder =>
                     {
                         builder
-                        .AllowAnyMethod()
-                        .AllowAnyHeader()
-                        .SetIsOriginAllowed(origin => true) // allow any origin
-                        .AllowCredentials()
-                        .WithExposedHeaders("Content-Disposition");
+                            .AllowAnyMethod()
+                            .AllowAnyHeader()
+                            .SetIsOriginAllowed(origin => true) // allow any origin
+                            .AllowCredentials()
+                            .WithExposedHeaders("Content-Disposition");
                     });
             });
+
             #endregion
+
             services.AddControllers();
+
             #region Add Identity
+
             var mongoDbSettings = Configuration.GetSection(nameof(DbConfig)).Get<DbConfig>();
             services.AddIdentity<AppUser, AppRole>()
                 .AddMongoDbStores<AppUser, AppRole, Guid>("mongodb://localhost:27017", "VideoEditing");
+
             #endregion
 
             services.Configure<DbConfig>(Configuration.GetSection(SystemConstants.DbConfig));
+
             #region Add Service
+
             services.AddScoped<IDbClient, DbClient>();
             services.AddScoped<IVideoEditingService, VideoEditingService>();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IStorageService, StorageService>();
             services.AddScoped<IFilmService, FilmService>();
+
             #endregion
 
             #region Add Authentication
-            // string issuer = Configuration.GetValue<string>("Tokens:Issuer");
-            // string signingKey = Configuration.GetValue<string>("Tokens:Key");
+
             string issuer = "12312312312312";
             string signingKey = "this is my custom Secret key for authentication";
             byte[] signingKeyBytes = System.Text.Encoding.UTF8.GetBytes(signingKey);
             var key = new SymmetricSecurityKey(signingKeyBytes);
 
             services.AddAuthentication(opt =>
-            {
-                opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
+                {
+                    opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                    opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                })
                 .AddJwtBearer(opt =>
                 {
                     opt.TokenValidationParameters = new TokenValidationParameters
@@ -88,12 +100,16 @@ namespace video_editing_api
                         ValidateAudience = false
                     };
                 });
+
             #endregion
+
             services.AddAutoMapper(typeof(AutoMapperProfile).Assembly);
+
             #region Add Swagger
+
             services.AddSwaggerGen(c =>
             {
-                c.SwaggerDoc("v1", new OpenApiInfo { Title = "video_editing_api", Version = "v1" });
+                c.SwaggerDoc("v1", new OpenApiInfo {Title = "video_editing_api", Version = "v1"});
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Description = @"JWT Authorization header using the Bearer scheme.<br>
@@ -105,23 +121,24 @@ namespace video_editing_api
                     Scheme = "Bearer"
                 });
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement()
+                {
                     {
+                        new OpenApiSecurityScheme
                         {
-                            new OpenApiSecurityScheme
+                            Reference = new OpenApiReference
                             {
-                                Reference=new OpenApiReference
-                                {
-                                    Type=ReferenceType.SecurityScheme,
-                                    Id="Bearer"
-                                },
-                                Scheme="oauth2",
-                                Name="Bearer",
-                                In=ParameterLocation.Header,
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
                             },
-                            new List<string>()
-                        }
-                    });
+                            Scheme = "oauth2",
+                            Name = "Bearer",
+                            In = ParameterLocation.Header,
+                        },
+                        new List<string>()
+                    }
+                });
             });
+
             #endregion
         }
 
@@ -138,6 +155,12 @@ namespace video_editing_api
             app.UseCors(_myAllowSpecificOrigins);
 
             app.UseStaticFiles();
+            app.UseStaticFiles(new StaticFileOptions()
+            {
+                FileProvider = new PhysicalFileProvider(
+                    Path.Combine(Directory.GetCurrentDirectory(), @"videos")),
+                RequestPath = new PathString("/videos")
+            });
 
             app.UseAuthentication();
 

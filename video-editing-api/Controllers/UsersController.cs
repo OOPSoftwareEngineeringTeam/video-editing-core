@@ -21,7 +21,9 @@ namespace video_editing_api.Controllers
         private readonly UserManager<AppUser> _userManager;
         private readonly SignInManager<AppUser> _signInManager;
         private readonly IConfiguration _config;
-        public UsersController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, IConfiguration config)
+
+        public UsersController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager,
+            IConfiguration config)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -67,13 +69,11 @@ namespace video_editing_api.Controllers
                 {
                     return BadRequest(new Response<string>(400, "An unknown error occurred, please try again.", null));
                 }
-
             }
             catch (System.Exception e)
             {
                 return BadRequest(new Response<string>(400, e.Message, null));
             }
-
         }
 
 
@@ -85,8 +85,11 @@ namespace video_editing_api.Controllers
                 var user = await _userManager.FindByNameAsync(account.Username);
                 if (user == null)
                 {
-                    user = await _userManager.FindByEmailAsync(account.Username) != null ? await _userManager.FindByEmailAsync(account.Username) : null;
+                    user = await _userManager.FindByEmailAsync(account.Username) != null
+                        ? await _userManager.FindByEmailAsync(account.Username)
+                        : null;
                 }
+
                 if (user == null)
                 {
                     return BadRequest(new Response<string>(400, "Incorrect Username", null));
@@ -100,10 +103,11 @@ namespace video_editing_api.Controllers
 
                 var claims = new List<Claim>
                 {
-                    new Claim(ClaimTypes.Name,user.UserName)
+                    new Claim(ClaimTypes.Name, user.UserName)
                 };
 
-                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this is my custom Secret key for authentication"));
+                var key = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes("this is my custom Secret key for authentication"));
                 var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
                 var tokenDescriptor = new SecurityTokenDescriptor
@@ -128,7 +132,6 @@ namespace video_editing_api.Controllers
             {
                 return BadRequest(new Response<string>(400, e.Message, null));
             }
-
         }
     }
 }

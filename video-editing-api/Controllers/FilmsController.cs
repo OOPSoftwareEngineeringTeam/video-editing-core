@@ -8,7 +8,6 @@ namespace video_editing_api.Controllers
     {
         public FilmsController()
         {
-
         }
     }
 }

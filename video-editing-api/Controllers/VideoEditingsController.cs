@@ -56,8 +56,6 @@ namespace video_editing_api.Controllers
         }
 
 
-
-
         [HttpGet("getMatchById")]
         public async Task<IActionResult> GetMatch(string Id)
         {
@@ -332,7 +330,6 @@ namespace video_editing_api.Controllers
         }
 
 
-
         [HttpPost("SaveToGallery")]
         [DisableRequestSizeLimit]
         public async Task<IActionResult> saveToGallery([FromForm] GalleryInput input)
@@ -392,7 +389,7 @@ namespace video_editing_api.Controllers
 
         [HttpGet("share/authorize")]
         [AllowAnonymous]
-        public async Task<IActionResult> ShareAuthor(string code, string state)
+        public async Task<IActionResult> ShareAuthor(string state,string code)
         {
             try
             {

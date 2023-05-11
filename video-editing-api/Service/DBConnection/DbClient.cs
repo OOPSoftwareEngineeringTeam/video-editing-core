@@ -17,13 +17,13 @@ namespace video_editing_api.Service.DBConnection
                 _dbConfig = options.Value;
 
                 MongoClientSettings settings = MongoClientSettings.FromUrl(
-                   new MongoUrl("mongodb://localhost:27017")
-                 );
+                    new MongoUrl(_dbConfig.ConnectionString)
+                );
                 settings.SslSettings =
-                  new SslSettings() { EnabledSslProtocols = SslProtocols.Tls12 };
+                    new SslSettings() {EnabledSslProtocols = SslProtocols.Tls12};
                 var mongoClient = new MongoClient(settings);
 
-                _database = mongoClient.GetDatabase("VideoEditing");
+                _database = mongoClient.GetDatabase(_dbConfig.DbName);
             }
             catch (System.Exception e)
             {

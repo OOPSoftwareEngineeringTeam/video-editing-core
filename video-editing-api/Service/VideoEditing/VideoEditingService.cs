@@ -23,32 +23,36 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 using video_editing_api.Model.Collection;
 using video_editing_api.Model.InputModel;
 using video_editing_api.Model.InputModel.Youtube;
 using video_editing_api.Service.DBConnection;
+using Video = Google.Apis.YouTube.v3.Data.Video;
 
 
 namespace video_editing_api.Service.VideoEditing
 {
     public class VideoEditingService : IVideoEditingService
     {
-
         private readonly IMongoCollection<Tournament> _tournament;
         private readonly IMongoCollection<MatchInfo> _matchInfo;
         private readonly IMongoCollection<HighlightVideo> _highlight;
         private readonly IMongoCollection<TagEvent> _tagEvent;
         private readonly IMongoCollection<TeamOfLeague> _teamOfLeague;
         private readonly IMongoCollection<Gallery> _gallery;
-
+        private readonly Cloudinary _cloudinary;
         private readonly IHubContext<NotiHub> _hub;
         private readonly IMapper _mapper;
         private IHttpClientFactory _clientFactory;
         private readonly IConfiguration _config;
 
         private readonly string _pathClientSecret;
+
         public VideoEditingService(IDbClient dbClient, IConfiguration config,
-            IWebHostEnvironment webHostEnvironment, IMapper mapper, IHttpClientFactory clientFactory, IHubContext<NotiHub> hub)
+            IWebHostEnvironment webHostEnvironment, IMapper mapper, IHttpClientFactory clientFactory,
+            IHubContext<NotiHub> hub)
         {
             _tournament = dbClient.GetTournamentCollection();
             _matchInfo = dbClient.GetMatchInfoCollection();
@@ -60,7 +64,12 @@ namespace video_editing_api.Service.VideoEditing
             _config = config;
             _hub = hub;
             _pathClientSecret = Path.Combine(webHostEnvironment.ContentRootPath, "Cert", "client_secret.json");
+            var account = new Account(
+                config["Cloudinary:CloudName"],
+                config["Cloudinary:ApiKey"],
+                config["Cloudinary:ApiSecret"]);
 
+            _cloudinary = new Cloudinary(account);
             _mapper = mapper;
         }
 
@@ -69,7 +78,8 @@ namespace video_editing_api.Service.VideoEditing
         }
 
 
-        #region Tournament      
+        #region Tournament
+
         public async Task<List<Tournament>> GetTournament()
         {
             try
@@ -93,32 +103,33 @@ namespace video_editing_api.Service.VideoEditing
                 throw new System.Exception(e.Message);
             }
         }
+
         #endregion
 
 
-
         #region MatchInfo
+
         public async Task<MatchInfo> GetInfoOfMatch(string id)
         {
             try
             {
                 var res = (from m in _matchInfo.AsQueryable()
-                           join t in _tournament.AsQueryable() on m.TournamentId equals t.Id
-                           where m.Id == id
-                           select new MatchInfo
-                           {
-                               Id = m.Id,
-                               TournamentId = m.TournamentId,
-                               Channel = m.Channel,
-                               Ip = m.Ip,
-                               MactchTime = m.MactchTime,
-                               MatchName = m.MatchName,
-                               Port = m.Port,
-                               TournametName = t.Name,
-                               //IsUploadJsonFile=m.IsUploadJsonFile,
-                               JsonFile = m.JsonFile,
-                               //Videos = m.Videos,
-                           }).FirstOrDefault();
+                    join t in _tournament.AsQueryable() on m.TournamentId equals t.Id
+                    where m.Id == id
+                    select new MatchInfo
+                    {
+                        Id = m.Id,
+                        TournamentId = m.TournamentId,
+                        Channel = m.Channel,
+                        Ip = m.Ip,
+                        MactchTime = m.MactchTime,
+                        MatchName = m.MatchName,
+                        Port = m.Port,
+                        TournametName = t.Name,
+                        //IsUploadJsonFile=m.IsUploadJsonFile,
+                        JsonFile = m.JsonFile,
+                        //Videos = m.Videos,
+                    }).FirstOrDefault();
                 return res;
             }
             catch (System.Exception e)
@@ -131,21 +142,21 @@ namespace video_editing_api.Service.VideoEditing
             try
             {
                 var res = (from m in _matchInfo.AsQueryable()
-                           join t in _tournament.AsQueryable() on m.TournamentId equals t.Id
-                           where m.Username == username
-                           select new MatchInfo
-                           {
-                               Id = m.Id,
-                               TournamentId = m.TournamentId,
-                               Channel = m.Channel,
-                               Ip = m.Ip,
-                               MactchTime = m.MactchTime,
-                               MatchName = m.MatchName,
-                               Port = m.Port,
-                               TournametName = t.Name,
-                               IsUploadJsonFile = m.IsUploadJsonFile,
-                               //Videos = m.Videos,
-                           }).ToList();
+                    join t in _tournament.AsQueryable() on m.TournamentId equals t.Id
+                    where m.Username == username
+                    select new MatchInfo
+                    {
+                        Id = m.Id,
+                        TournamentId = m.TournamentId,
+                        Channel = m.Channel,
+                        Ip = m.Ip,
+                        MactchTime = m.MactchTime,
+                        MatchName = m.MatchName,
+                        Port = m.Port,
+                        TournametName = t.Name,
+                        IsUploadJsonFile = m.IsUploadJsonFile,
+                        //Videos = m.Videos,
+                    }).ToList();
 
                 return res.OrderByDescending(m => m.MactchTime).ToList();
             }
@@ -163,12 +174,14 @@ namespace video_editing_api.Service.VideoEditing
                     await _matchInfo.InsertOneAsync(matchInfo);
                 else
                 {
-                    var tournament = await _tournament.Find(tnm => tnm.Name == matchInfo.TournametName).FirstOrDefaultAsync();
+                    var tournament = await _tournament.Find(tnm => tnm.Name == matchInfo.TournametName)
+                        .FirstOrDefaultAsync();
                     if (tournament == null)
                     {
-                        tournament = new Tournament() { Name = matchInfo.TournametName };
+                        tournament = new Tournament() {Name = matchInfo.TournametName};
                         await _tournament.InsertOneAsync(tournament);
                     }
+
                     var idTournament = tournament.Id;
                     matchInfo.TournamentId = idTournament;
                     await _matchInfo.InsertOneAsync(matchInfo);
@@ -177,25 +190,24 @@ namespace video_editing_api.Service.VideoEditing
                 var jsonBody = new
                 {
                     match_id = matchInfo.Id
-                };
-
-                HttpClient client = new HttpClient();
-                client.Timeout = TimeSpan.FromDays(1);
-                client.BaseAddress = new System.Uri("http://118.69.218.59:7007");
-                var json = JsonConvert.SerializeObject(jsonBody);
-                try
-                {
-                    var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
-                    var response = await client.PostAsync("/savematch", httpContent);
-                    if (response.IsSuccessStatusCode)
-                        return "Succeed";
-                    else
-                        throw new System.Exception(response.Content.ReadAsStringAsync().Result);
-                }
-                catch (System.Exception ex)
-                {
-                    throw new System.Exception(ex.Message);
-                }
+                };return "Succeed";
+                // HttpClient client = new HttpClient();
+                // client.Timeout = TimeSpan.FromDays(1);
+                // client.BaseAddress = new System.Uri("http://118.69.218.59:7007");
+                // var json = JsonConvert.SerializeObject(jsonBody);
+                // try
+                // {
+                //     var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+                //     var response = await client.PostAsync("/savematch", httpContent);
+                //     if (response.IsSuccessStatusCode)
+                //         return "Succeed";
+                //     else
+                //         throw new System.Exception(response.Content.ReadAsStringAsync().Result);
+                // }
+                // catch (System.Exception ex)
+                // {
+                //     throw new System.Exception(ex.Message);
+                // }
             }
             catch (System.Exception e)
             {
@@ -273,8 +285,12 @@ namespace video_editing_api.Service.VideoEditing
                 {
                     textJson = await reader.ReadToEndAsync();
                 }
-                InputSendServer<EventStorage> input = JsonConvert.DeserializeObject<InputSendServer<EventStorage>>(textJson);
+
+                InputSendServer<EventStorage> input =
+                    JsonConvert.DeserializeObject<InputSendServer<EventStorage>>(textJson);
+
                 #region tagEvent
+
                 var tagEvnt = await _tagEvent.Find(tag => tag.Username == username).FirstOrDefaultAsync();
                 if (tagEvnt == null)
                 {
@@ -297,9 +313,14 @@ namespace video_editing_api.Service.VideoEditing
                         input.Event[i].selected = i == 0 ? 1 : -1;
                     }
                 }
+
                 #endregion
+
                 #region team
-                var team = await _teamOfLeague.Find(team => team.TournamentId == match.TournamentId && team.Username == username).FirstOrDefaultAsync();
+
+                var team = await _teamOfLeague
+                    .Find(team => team.TournamentId == match.TournamentId && team.Username == username)
+                    .FirstOrDefaultAsync();
                 if (team == null)
                 {
                     flagTeam = true;
@@ -382,7 +403,6 @@ namespace video_editing_api.Service.VideoEditing
         }
 
 
-
         public async Task<List<string>> NotConcatVideoOfMatch(string username, ConcatModel concatModel)
         {
             try
@@ -405,30 +425,30 @@ namespace video_editing_api.Service.VideoEditing
                 var mergeQueue = new MergeQueueInput(inputSend, hl.Id, username, 1);
                 BackgroundQueue.MergeQueue.Enqueue(mergeQueue);
 
-                //Thread thead = new Thread(async () =>
-                //{
-                //    Console.WriteLine("start thread");
-                //    try
-                //    {
-                //        HttpClient client = new HttpClient();
-                //        client.Timeout = TimeSpan.FromDays(1);
-                //        client.BaseAddress = new System.Uri("http://118.69.218.59:7007");
-                //        var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
-                //        var response = await client.PostAsync("/highlight_nomerge", httpContent);
-                //        var result = await response.Content.ReadAsStringAsync();
-
-                //        var listRes = JsonConvert.DeserializeObject<NotConcatResultModel>(result);
-                //        await _hub.Clients.Group(username).SendAsync("not_merge", "background_task", JsonConvert.SerializeObject(listRes.mp4));
-
-                //    }
-                //    catch (System.Exception ex)
-                //    {
-                //        Console.WriteLine(ex.Message);
-                //    }
-                //    Console.WriteLine("stop thread");
-                //});
-                //thead.IsBackground = true;
-                //thead.Start();
+                // Thread thead = new Thread(async () =>
+                // {
+                //     Console.WriteLine("start thread");
+                //     try
+                //     {
+                //         HttpClient client = new HttpClient();
+                //         client.Timeout = TimeSpan.FromDays(1);
+                //         client.BaseAddress = new System.Uri("http://118.69.218.59:7007");
+                //         var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
+                //         var response = await client.PostAsync("/highlight_nomerge", httpContent);
+                //         var result = await response.Content.ReadAsStringAsync();
+                //
+                //         var listRes = JsonConvert.DeserializeObject<NotConcatResultModel>(result);
+                //         await _hub.Clients.Group(username).SendAsync("not_merge", "background_task", JsonConvert.SerializeObject(listRes.mp4));
+                //
+                //     }
+                //     catch (System.Exception ex)
+                //     {
+                //         Console.WriteLine(ex.Message);
+                //     }
+                //     Console.WriteLine("stop thread");
+                // });
+                // thead.IsBackground = true;
+                // thead.Start();
                 return null;
             }
             catch (System.Exception ex)
@@ -438,8 +458,7 @@ namespace video_editing_api.Service.VideoEditing
         }
 
 
-
-        #region Download File    
+        #region Download File
 
         public async Task<string> DownloadOne(string username, ConcatModel concatModel)
         {
@@ -457,14 +476,14 @@ namespace video_editing_api.Service.VideoEditing
                     {
                         HttpClient client = new HttpClient();
                         client.Timeout = TimeSpan.FromDays(1);
-                        client.BaseAddress = new System.Uri(_config["BaseUrlMergeVideo"]);
+                        client.BaseAddress = new System.Uri("https://store.cads.live");
                         var httpContent = new StringContent(json, Encoding.UTF8, "application/json");
                         var response = await client.PostAsync("/projects/merge", httpContent);
                         var result = await response.Content.ReadAsStringAsync();
 
                         ConcatResultModel model = JsonConvert.DeserializeObject<ConcatResultModel>(result);
-                        await _hub.Clients.Group(username).SendAsync("download_one", "background_task", JsonConvert.SerializeObject(model.mp4));
-
+                        await _hub.Clients.Group(username).SendAsync("download_one", "background_task",
+                            JsonConvert.SerializeObject(model.mp4));
                     }
                     catch (System.Exception ex)
                     {
@@ -492,10 +511,10 @@ namespace video_editing_api.Service.VideoEditing
                 var inputSend = new InputSendServer<Eventt>();
                 foreach (var item in input.logo)
                 {
-                    item.position.x = (int)Math.Round((float)item.position.x * 2);
-                    item.position.y = (int)Math.Round((float)item.position.y * 2);
-                    item.size[0] = (int)Math.Round((float)item.size[0] * 2);
-                    item.size[1] = (int)Math.Round((float)item.size[1] * 2);
+                    item.position.x = (int) Math.Round((float) item.position.x * 2);
+                    item.position.y = (int) Math.Round((float) item.position.y * 2);
+                    item.size[0] = (int) Math.Round((float) item.size[0] * 2);
+                    item.size[1] = (int) Math.Round((float) item.size[1] * 2);
                 }
 
                 inputSend = _mapper.Map<InputSendServer<Eventt>>(input);
@@ -503,7 +522,6 @@ namespace video_editing_api.Service.VideoEditing
                 inputSend.Event = eventts;
                 //inputSend.logo = input.logo;
                 return inputSend;
-
             }
             catch (System.Exception ex)
             {
@@ -531,11 +549,13 @@ namespace video_editing_api.Service.VideoEditing
                     };
                     if (item.ts != null && item.ts.Count > 0)
                     {
-                        eventt.ts.Add((int)(item.ts[0] + item.startTime));
-                        eventt.ts.Add((int)(item.ts[0] + item.endTime));
+                        eventt.ts.Add((int) (item.startTime));
+                        eventt.ts.Add((int) (item.endTime));
                     }
+
                     eventSrc.Add(eventt);
                 }
+
                 return eventSrc;
             }
             catch (System.Exception ex)
@@ -583,10 +603,10 @@ namespace video_editing_api.Service.VideoEditing
             }
         }
 
-
         #endregion
 
         #region tag
+
         public async Task<List<Model.Collection.Tag>> GetTag(string username)
         {
             try
@@ -599,7 +619,6 @@ namespace video_editing_api.Service.VideoEditing
                     var matchs = _matchInfo.Find(x => x.Username == username && x.IsUploadJsonFile).ToList();
                     foreach (var match in matchs)
                     {
-
                         foreach (var item in match.JsonFile.Event)
                         {
                             if (!tag.Any(t => t.TagName.ToLower() == item.Event.ToLower()))
@@ -607,8 +626,8 @@ namespace video_editing_api.Service.VideoEditing
                                 tag.Add(new Model.Collection.Tag(item.Event));
                             }
                         }
-
                     }
+
                     tagEvnt = new TagEvent();
                     tagEvnt.Username = username;
                     tagEvnt.Tag = tag;
@@ -631,12 +650,14 @@ namespace video_editing_api.Service.VideoEditing
             {
                 if (string.IsNullOrEmpty(leagueId)) return new List<Team>();
 
-                var team = await _teamOfLeague.Find(team => team.TournamentId == leagueId && team.Username == username).FirstOrDefaultAsync();
+                var team = await _teamOfLeague.Find(team => team.TournamentId == leagueId && team.Username == username)
+                    .FirstOrDefaultAsync();
 
                 if (team == null)
                 {
                     List<Team> teams = new List<Team>();
-                    var matchs = _matchInfo.Find(x => x.Username == username && x.TournamentId == leagueId && x.IsUploadJsonFile).ToList();
+                    var matchs = _matchInfo.Find(x =>
+                        x.Username == username && x.TournamentId == leagueId && x.IsUploadJsonFile).ToList();
                     foreach (var match in matchs)
                     {
                         foreach (var item in match.JsonFile.teams)
@@ -646,7 +667,6 @@ namespace video_editing_api.Service.VideoEditing
                                 teams.Add(new Team(item));
                             }
                         }
-
                     }
 
                     team = new TeamOfLeague();
@@ -672,10 +692,10 @@ namespace video_editing_api.Service.VideoEditing
             try
             {
                 var matchs = await _matchInfo.Find(m => m.Username == username
-                                                    && m.MactchTime >= request.DateFrom
-                                                    && m.MactchTime <= request.DateTo
-                                                    && m.IsUploadJsonFile
-                                                    && m.TournamentId == request.TournamentId).ToListAsync();
+                                                        && m.MactchTime >= request.DateFrom
+                                                        && m.MactchTime <= request.DateTo
+                                                        && m.IsUploadJsonFile
+                                                        && m.TournamentId == request.TournamentId).ToListAsync();
 
                 List<EventStorage> response = new List<EventStorage>();
                 foreach (var match in matchs)
@@ -743,7 +763,6 @@ namespace video_editing_api.Service.VideoEditing
         }
 
 
-
         public async Task<string> SaveToGallery(string username, GalleryInput input)
         {
             try
@@ -756,7 +775,7 @@ namespace video_editing_api.Service.VideoEditing
                     Height = input.Height,
                     Width = input.Width
                 };
-                gallery.file_name = await UploadToServerStorage(input.File);
+                gallery.file_name = await UploadToLocal(input.File);
                 await _gallery.InsertOneAsync(gallery);
                 return "success";
             }
@@ -765,7 +784,49 @@ namespace video_editing_api.Service.VideoEditing
                 throw new System.Exception(ex.Message);
             }
         }
+        public async Task<string> UploadToLocal(IFormFile file)
+        {
+            if (file == null)
+            {
+                throw new System.Exception("File is null.");
+            }
 
+            var uploadsFolder = "./videos/gallery";
+            if (!Directory.Exists("./videos/gallery"))
+            {
+                Directory.CreateDirectory(uploadsFolder);
+            }
+
+            var uniqueFileName = Guid.NewGuid().ToString() + "_" + file.FileName;
+            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+            using (var fileStream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(fileStream);
+            }
+
+            return "https://localhost:44394/videos/gallery/" + uniqueFileName;
+        }
+        public async Task<string> UploadToCloudinary(IFormFile file)
+        {
+            if (file == null) throw new System.Exception("File is null.");
+
+            var uploadParams = new RawUploadParams
+            {
+                File = new FileDescription(file.FileName, file.OpenReadStream()),
+                UseFilename = true,
+                UniqueFilename = true
+            };
+
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
+
+            if (uploadResult.Error != null)
+            {
+                throw new System.Exception(uploadResult.Error.Message);
+            }
+
+            return uploadResult.SecureUrl.AbsoluteUri;
+        }
         private async Task<string> UploadToServerStorage(IFormFile file)
         {
             try
@@ -781,11 +842,13 @@ namespace video_editing_api.Service.VideoEditing
                     byte[] data;
                     using (var br = new BinaryReader(file.OpenReadStream()))
                     {
-                        data = br.ReadBytes((int)file.OpenReadStream().Length);
+                        data = br.ReadBytes((int) file.OpenReadStream().Length);
                     }
+
                     ByteArrayContent bytes = new ByteArrayContent(data);
                     requestContent.Add(bytes, "file", file.FileName);
                 }
+
                 var response = await client.PostAsync("/projects/", requestContent);
                 if (response.IsSuccessStatusCode)
                 {
@@ -810,7 +873,7 @@ namespace video_editing_api.Service.VideoEditing
                 inputSendServer.Event = input.Event;
                 //if (input.Logo.Count == 0) input.Logo.Add(new List<string>());
                 inputSendServer.logo = input.Logo;
-
+                inputSendServer.audio = input.audio;
 
                 var inputSend = handlePreSendServer(inputSendServer);
 
@@ -855,17 +918,18 @@ namespace video_editing_api.Service.VideoEditing
             try
             {
                 const string OAUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-                OAuthUserCredential user = JsonConvert.DeserializeObject<OAuthUserCredential>(File.ReadAllText(_pathClientSecret));
+                OAuthUserCredential user =
+                    JsonConvert.DeserializeObject<OAuthUserCredential>(File.ReadAllText(_pathClientSecret));
 
                 string id = Guid.NewGuid().ToString();
                 var data = new Dictionary<string, string>
                 {
-                     { "client_id", user.client_id },
-                     { "scope", YouTubeService.Scope.YoutubeUpload },
-                     { "response_type", "code" },
-                     { "redirect_uri", user.redirect_uris[0] },
-                     { "access_type", "offline" },
-                     {"state", id }
+                    {"client_id", user.client_id},
+                    {"scope", YouTubeService.Scope.YoutubeUpload},
+                    {"response_type", "code"},
+                    {"redirect_uri", user.redirect_uris[0]},
+                    {"access_type", "offline"},
+                    {"state", id}
                 };
 
                 var newUrl = QueryHelpers.AddQueryString(OAUTH_URL, data);
@@ -894,7 +958,6 @@ namespace video_editing_api.Service.VideoEditing
             {
                 throw new System.Exception(e.Message);
             }
-
         }
 
         public async Task HandleCode(string code, string state)
@@ -908,14 +971,15 @@ namespace video_editing_api.Service.VideoEditing
                     throw new Exception("No find video for share");
                 }
 
-                OAuthUserCredential user = JsonConvert.DeserializeObject<OAuthUserCredential>(File.ReadAllText(_pathClientSecret));
+                OAuthUserCredential user =
+                    JsonConvert.DeserializeObject<OAuthUserCredential>(File.ReadAllText(_pathClientSecret));
                 var payload = new Dictionary<string, string>
                 {
-                    { "code" , code } ,
-                    { "client_id" , user.client_id } ,
-                    { "client_secret" , user.client_secret } ,
-                    { "redirect_uri" , user.redirect_uris[0] } ,
-                    { "grant_type" , "authorization_code" }
+                    {"code", code},
+                    {"client_id", user.client_id},
+                    {"client_secret", user.client_secret},
+                    {"redirect_uri", user.redirect_uris[0]},
+                    {"grant_type", "authorization_code"}
                 };
 
                 var content = new FormUrlEncodedContent(payload);
@@ -940,7 +1004,8 @@ namespace video_editing_api.Service.VideoEditing
                 using (var fileStream = new MemoryStream(Client.DownloadData(filePath)))
                 {
                     Console.WriteLine("Lấy stream done, fileSize: " + fileStream.Length);
-                    var videosInsertRequest = youTubeService.Videos.Insert(video, "snippet,status", fileStream, "video/*");
+                    var videosInsertRequest =
+                        youTubeService.Videos.Insert(video, "snippet,status", fileStream, "video/*");
                     videosInsertRequest.ProgressChanged += VideoUploadProgressChanged;
                     videosInsertRequest.ResponseReceived += VideoUploadResponseReceived;
 
@@ -954,11 +1019,11 @@ namespace video_editing_api.Service.VideoEditing
                             break;
                         case UploadStatus.Failed:
                             var error = progress.Exception;
-                            Console.WriteLine("\n||==>UploadStatus.Failed->error.Message:{error.Message}", error.Message);
+                            Console.WriteLine("\n||==>UploadStatus.Failed->error.Message:{error.Message}",
+                                error.Message);
                             break;
                     }
                 }
-
             }
             catch (System.Exception e)
             {
@@ -980,17 +1045,22 @@ namespace video_editing_api.Service.VideoEditing
                     {
                         Console.WriteLine($"||==> Uploading video: {bytesSent} bytes sent.");
                     }
-                    catch { }
+                    catch
+                    {
+                    }
+
                     break;
                 case UploadStatus.Failed:
                     try
                     {
                         Console.WriteLine($"||==> An error prevented the upload from completing.{progress.Exception}");
                     }
-                    catch { }
+                    catch
+                    {
+                    }
+
                     break;
             }
-
         }
 
         private async Task<TokenResponse> FetchToken(OAuthUserCredential user, Token token)
@@ -1017,10 +1087,10 @@ namespace video_editing_api.Service.VideoEditing
 
             var payload = new Dictionary<string, string>
             {
-              { "client_id" , user.client_id } ,
-              { "client_secret" , user.client_secret } ,
-              { "refresh_token" , refreshToken } ,
-              { "grant_type" , "refresh_token" }
+                {"client_id", user.client_id},
+                {"client_secret", user.client_secret},
+                {"refresh_token", refreshToken},
+                {"grant_type", "refresh_token"}
             };
 
             var content = new FormUrlEncodedContent(payload);
@@ -1036,8 +1106,10 @@ namespace video_editing_api.Service.VideoEditing
                 token = JsonConvert.DeserializeObject<Token>(jsonResponse);
                 token.refresh_token = refreshToken;
             }
+
             return token;
         }
+
         private YouTubeService FetchYouTubeService(TokenResponse tokenResponse, string clientId, string clientSecret)
         {
             var initializer = new GoogleAuthorizationCodeFlow.Initializer
@@ -1069,6 +1141,7 @@ namespace video_editing_api.Service.VideoEditing
 
             return !jsonString.Contains("error_description");
         }
+
         #endregion
     }
 }

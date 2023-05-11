@@ -8,5 +8,5 @@ namespace video_editing_api.Model.InputModel
         public string PublicId { get; set; }
         public int StartTime { get; set; }
         public int EndTime { get; set; }
-    } 
+    }
 }
