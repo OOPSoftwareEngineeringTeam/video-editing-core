@@ -1,0 +1,40 @@
+.audio-panel {
+    display: flex;
+    justify-content: space-evenly;
+    margin: 10px 0;
+}
+
+.edit-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.timeline-container {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #000;
+    width: 80%;
+}
+
+.video-track,
+.audio-track {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin: 10px 0;
+}
+
+.label {
+    width: 20%;
+    text-align: right;
+    margin-right: 10px;
+}
+
+.track {
+    flex-grow: 1;
+    border: 1px solid #000;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+}
